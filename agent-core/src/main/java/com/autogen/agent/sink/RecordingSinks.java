@@ -15,6 +15,12 @@ public final class RecordingSinks {
         if ("yaml".equalsIgnoreCase(type)) {
             return new YamlFileRecordingSink(config.getStorage().getOutputDir());
         }
+        if ("kafka".equalsIgnoreCase(type)) {
+            return new KafkaRecordingSink(config.getStorage().getKafka());
+        }
+        if ("mongo".equalsIgnoreCase(type) || "mongodb".equalsIgnoreCase(type)) {
+            return new MongoRecordingSink(config);
+        }
         throw new IllegalArgumentException("Unsupported recording sink type: " + type);
     }
 }

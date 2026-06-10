@@ -24,7 +24,7 @@ public final class TrafficRecorderAgent {
         AgentConfig config = AgentConfig.load(args.get("config"));
         GlobalRecorder.initialize(config);
         AgentInstaller.install(instrumentation, config);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> GlobalRecorder.get().flush(), "traffic-recorder-flush"));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> GlobalRecorder.get().shutdown(), "traffic-recorder-shutdown"));
         System.out.println("[traffic-recorder-agent] started for service=" + config.getServiceName());
     }
 

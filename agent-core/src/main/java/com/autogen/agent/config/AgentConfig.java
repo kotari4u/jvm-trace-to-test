@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -22,31 +23,79 @@ public class AgentConfig {
     private CaptureConfig mongo = new CaptureConfig(true);
     private PayloadConfig payload = new PayloadConfig();
     private RedactionConfig redaction = new RedactionConfig();
+    private AsyncConfig async = new AsyncConfig();
 
     public static AgentConfig load(String path) {
         AgentConfig config = new AgentConfig();
-        if (path == null || path.trim().isEmpty()) {
+        String configuredPath = firstNonBlank(path, System.getProperty("jvm.trace-to-test.config"), System.getenv("JVM_TRACE_TO_TEST_CONFIG"));
+        if (configuredPath != null) {
+            loadFromPath(config, Path.of(configuredPath), true);
             return config;
         }
-        Path configPath = Path.of(path);
+
+        for (Path candidate : defaultApplicationConfigPaths()) {
+            if (Files.exists(candidate)) {
+                loadFromPath(config, candidate, false);
+                return config;
+            }
+        }
+        return config;
+    }
+
+    private static void loadFromPath(AgentConfig config, Path configPath, boolean explicitAgentConfig) {
         if (!Files.exists(configPath)) {
-            return config;
+            return;
         }
         try (InputStream inputStream = Files.newInputStream(configPath)) {
-            Object loaded = new Yaml().load(inputStream);
-            if (loaded instanceof Map) {
-                config.apply(asMap(loaded));
+            Iterable<Object> documents = new Yaml().loadAll(inputStream);
+            for (Object loaded : documents) {
+                if (loaded instanceof Map) {
+                    Map<String, Object> yaml = asMap(loaded);
+                    String springServiceName = springApplicationName(yaml);
+                    Map<String, Object> agentConfig = agentConfigSection(yaml, explicitAgentConfig);
+                    if (!agentConfig.isEmpty()) {
+                        config.apply(agentConfig);
+                    }
+                    if (isBlank(config.serviceName) && springServiceName != null) {
+                        config.serviceName = springServiceName;
+                    }
+                }
             }
-            return config;
         } catch (IOException e) {
-            throw new IllegalStateException("Unable to load agent config: " + path, e);
+            throw new IllegalStateException("Unable to load agent config: " + configPath, e);
         }
+    }
+
+    private static List<Path> defaultApplicationConfigPaths() {
+        return Arrays.asList(
+                Path.of("./application.yml"),
+                Path.of("./application.yaml"),
+                Path.of("./config/application.yml"),
+                Path.of("./config/application.yaml"),
+                Path.of("./src/main/resources/application.yml"),
+                Path.of("./src/main/resources/application.yaml"));
+    }
+
+    private static Map<String, Object> agentConfigSection(Map<String, Object> yaml, boolean explicitAgentConfig) {
+        for (String key : Arrays.asList("jvmTraceToTest", "jvm-trace-to-test", "traceToTest", "trafficRecorderAgent", "trafficRecorder")) {
+            Map<String, Object> section = map(yaml.get(key));
+            if (!section.isEmpty()) {
+                return section;
+            }
+        }
+        return explicitAgentConfig ? yaml : Collections.emptyMap();
+    }
+
+    private static String springApplicationName(Map<String, Object> yaml) {
+        Map<String, Object> spring = map(yaml.get("spring"));
+        Map<String, Object> application = map(spring.get("application"));
+        return string(application.get("name"), null);
     }
 
     private void apply(Map<String, Object> yaml) {
         Map<String, Object> agent = map(yaml.get("agent"));
-        serviceName = string(agent.get("serviceName"), serviceName);
-        enabled = bool(agent.get("enabled"), enabled);
+        serviceName = string(firstPresent(agent.get("serviceName"), yaml.get("serviceName")), serviceName);
+        enabled = bool(firstPresent(agent.get("enabled"), yaml.get("enabled")), enabled);
         storage.apply(map(yaml.get("storage")));
         kafka.apply(map(yaml.get("kafka")));
         http.apply(map(yaml.get("http")));
@@ -54,6 +103,7 @@ public class AgentConfig {
         mongo.apply(map(yaml.get("mongo")));
         payload.apply(map(yaml.get("payload")));
         redaction.apply(map(yaml.get("redaction")));
+        async.apply(map(yaml.get("async")));
     }
 
     @SuppressWarnings("unchecked")
@@ -73,8 +123,30 @@ public class AgentConfig {
         return value == null ? fallback : String.valueOf(value);
     }
 
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty() || "unknown-service".equals(value);
+    }
+
     private static boolean bool(Object value, boolean fallback) {
         return value == null ? fallback : Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private static Object firstPresent(Object... values) {
+        for (Object value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private static int integer(Object value, int fallback) {
@@ -135,15 +207,23 @@ public class AgentConfig {
         return redaction;
     }
 
+    public AsyncConfig getAsync() {
+        return async;
+    }
+
     public static class StorageConfig {
         private String type = "yaml";
         private String outputDir = "./recordings";
         private String fileStrategy = "trace-per-file";
+        private KafkaSinkConfig kafka = new KafkaSinkConfig();
+        private MongoSinkConfig mongo = new MongoSinkConfig();
 
         private void apply(Map<String, Object> map) {
             type = string(map.get("type"), type);
             outputDir = string(map.get("outputDir"), outputDir);
             fileStrategy = string(map.get("fileStrategy"), fileStrategy);
+            kafka.apply(map(map.get("kafka")));
+            mongo.apply(map(map.get("mongo")));
         }
 
         public String getType() {
@@ -156,6 +236,82 @@ public class AgentConfig {
 
         public String getFileStrategy() {
             return fileStrategy;
+        }
+
+        public KafkaSinkConfig getKafka() {
+            return kafka;
+        }
+
+        public MongoSinkConfig getMongo() {
+            return mongo;
+        }
+    }
+
+    public static class KafkaSinkConfig {
+        private String bootstrapServers = "localhost:9092";
+        private String topic = "traffic-recordings";
+        private String clientId = "traffic-recorder-agent";
+        private String compressionType = "lz4";
+        private String acks = "1";
+
+        private void apply(Map<String, Object> map) {
+            bootstrapServers = string(map.get("bootstrapServers"), bootstrapServers);
+            topic = string(map.get("topic"), topic);
+            clientId = string(map.get("clientId"), clientId);
+            compressionType = string(map.get("compressionType"), compressionType);
+            acks = string(map.get("acks"), acks);
+        }
+
+        public String getBootstrapServers() {
+            return bootstrapServers;
+        }
+
+        public String getTopic() {
+            return topic;
+        }
+
+        public String getClientId() {
+            return clientId;
+        }
+
+        public String getCompressionType() {
+            return compressionType;
+        }
+
+        public String getAcks() {
+            return acks;
+        }
+    }
+
+    public static class MongoSinkConfig {
+        private String connectionString = "mongodb://localhost:27017";
+        private String database = "traffic_recorder";
+        private String collection;
+        private int ttlDays = 30;
+
+        private void apply(Map<String, Object> map) {
+            connectionString = string(map.get("connectionString"), connectionString);
+            database = string(map.get("database"), database);
+            if (map.containsKey("collection")) {
+                collection = string(map.get("collection"), collection);
+            }
+            ttlDays = integer(map.get("ttlDays"), ttlDays);
+        }
+
+        public String getConnectionString() {
+            return connectionString;
+        }
+
+        public String getDatabase() {
+            return database;
+        }
+
+        public String getCollection() {
+            return collection;
+        }
+
+        public int getTtlDays() {
+            return ttlDays;
         }
     }
 
@@ -266,6 +422,36 @@ public class AgentConfig {
 
         public List<String> getRedisKeyPatterns() {
             return redisKeyPatterns;
+        }
+    }
+
+    public static class AsyncConfig {
+        private boolean enabled = true;
+        private int workerThreads = 1;
+        private int queueSize = 10000;
+        private long shutdownDrainMillis = 5000;
+
+        private void apply(Map<String, Object> map) {
+            enabled = bool(map.get("enabled"), enabled);
+            workerThreads = integer(map.get("workerThreads"), workerThreads);
+            queueSize = integer(map.get("queueSize"), queueSize);
+            shutdownDrainMillis = integer(map.get("shutdownDrainMillis"), (int) shutdownDrainMillis);
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public int getWorkerThreads() {
+            return workerThreads;
+        }
+
+        public int getQueueSize() {
+            return queueSize;
+        }
+
+        public long getShutdownDrainMillis() {
+            return shutdownDrainMillis;
         }
     }
 }
