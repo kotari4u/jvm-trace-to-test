@@ -1,0 +1,36 @@
+plugins {
+    id "com.github.johnrengelman.shadow"
+}
+
+dependencies {
+    implementation project(":agent-core")
+    implementation "net.bytebuddy:byte-buddy:1.14.18"
+    implementation "net.bytebuddy:byte-buddy-agent:1.14.18"
+
+    testImplementation "org.junit.jupiter:junit-jupiter:5.10.3"
+    testImplementation "org.assertj:assertj-core:3.26.3"
+}
+
+jar {
+    manifest {
+        attributes(
+                "Premain-Class": "com.autogen.agent.bootstrap.TrafficRecorderAgent",
+                "Agent-Class": "com.autogen.agent.bootstrap.TrafficRecorderAgent",
+                "Can-Redefine-Classes": "true",
+                "Can-Retransform-Classes": "true"
+        )
+    }
+}
+
+shadowJar {
+    archiveClassifier.set("")
+    mergeServiceFiles()
+    manifest {
+        attributes(
+                "Premain-Class": "com.autogen.agent.bootstrap.TrafficRecorderAgent",
+                "Agent-Class": "com.autogen.agent.bootstrap.TrafficRecorderAgent",
+                "Can-Redefine-Classes": "true",
+                "Can-Retransform-Classes": "true"
+        )
+    }
+}

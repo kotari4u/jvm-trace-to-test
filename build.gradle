@@ -1,0 +1,26 @@
+plugins {
+    id "java-library" apply false
+    id "com.github.johnrengelman.shadow" version "8.1.1" apply false
+}
+
+subprojects {
+    apply plugin: "java-library"
+
+    group = "com.autogen"
+    version = "0.1.0-SNAPSHOT"
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+        withSourcesJar()
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = "UTF-8"
+        options.release = 11
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+}

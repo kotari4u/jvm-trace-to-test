@@ -1,0 +1,49 @@
+agent:
+  serviceName: order-service
+  enabled: true
+
+storage:
+  type: yaml
+  outputDir: ./recordings
+  fileStrategy: trace-per-file
+
+kafka:
+  enabled: true
+  capturePayloads: true
+  includeTopics:
+    - orders.*
+  excludeTopics: []
+
+http:
+  enabled: true
+  capturePayloads: true
+
+redis:
+  enabled: true
+  capturePayloads: true
+
+mongo:
+  enabled: true
+  capturePayloads: true
+
+payload:
+  maxBytes: 65536
+  prettyPrintJson: true
+  binaryPolicy: base64
+
+redaction:
+  headers:
+    - Authorization
+    - Cookie
+    - Set-Cookie
+  jsonFields:
+    - password
+    - token
+    - accessToken
+    - refreshToken
+    - ssn
+  mongoFields:
+    - password
+    - accessToken
+  redisKeyPatterns:
+    - session:*
