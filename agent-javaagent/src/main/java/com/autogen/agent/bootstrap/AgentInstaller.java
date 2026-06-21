@@ -4,6 +4,7 @@ import com.autogen.agent.config.AgentConfig;
 import com.autogen.agent.instrumentation.http.JavaHttpClientAdvice;
 import com.autogen.agent.instrumentation.http.RestTemplateAdvice;
 import com.autogen.agent.instrumentation.http.ServletHttpAdvice;
+import com.autogen.agent.instrumentation.http.SpringDispatcherServletAdvice;
 import com.autogen.agent.instrumentation.http.SpringMvcHandlerAdvice;
 import com.autogen.agent.instrumentation.http.WebClientAdvice;
 import com.autogen.agent.instrumentation.kafka.KafkaConsumerPollAdvice;
@@ -56,6 +57,8 @@ public final class AgentInstaller {
             builder = builder
                     .type(named("org.apache.catalina.core.ApplicationFilterChain"))
                     .transform(advice(named("doFilter"), ServletHttpAdvice.class))
+                    .type(named("org.springframework.web.servlet.DispatcherServlet"))
+                    .transform(advice(named("doDispatch").and(takesArguments(2)), SpringDispatcherServletAdvice.class))
                     .type(named("org.springframework.web.method.support.InvocableHandlerMethod"))
                     .transform(advice(named("doInvoke"), SpringMvcHandlerAdvice.class))
                     .type(named("org.springframework.web.client.RestTemplate"))

@@ -8,6 +8,7 @@ The agent currently targets:
 - Spring Kafka listener execution
 - Spring Boot startup lifecycle
 - HTTP server requests through embedded Tomcat/Spring MVC paths
+- Spring MVC request and response bodies through `DispatcherServlet` content-caching wrappers
 - HTTP clients through `RestTemplate`, `WebClient`, and Java `HttpClient`
 - Redis through Jedis and Lettuce
 - MongoDB Java driver internal command paths

@@ -26,6 +26,9 @@ public class ServletHttpAdvice {
             return;
         }
         try {
+            if (Boolean.TRUE.equals(ReflectionUtils.call(httpScope.request, "getAttribute", new Class[]{String.class}, SpringDispatcherServletAdvice.RECORDED_ATTRIBUTE))) {
+                return;
+            }
             RecordedInteraction interaction = new RecordedInteraction();
             interaction.setType("HTTP_SERVER");
             interaction.setOperation(value(ReflectionUtils.call(httpScope.request, "getMethod"), "UNKNOWN"));
